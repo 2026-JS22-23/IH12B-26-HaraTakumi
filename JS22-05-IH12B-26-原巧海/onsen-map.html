@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全国温泉めぐりマップ</title>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCAKLjisxFelKwIl1_G6MiEO9-ya7Twr5s&callback=console.debug&libraries=maps,marker&v=beta"></script>
+
+<!-- ▼ jQuery / jQuery UI (プラスα:UI装飾用) -->
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"></script>
+<!-- ▲ -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --ai: #1d3a5f;        /* 藍 */
+        --ai-deep: #142a46;
+        --washi: #f6f3ea;     /* 和紙 */
+        --sumi: #33322e;      /* 墨 */
+        --shu: #b8452e;       /* 朱 */
+        --yu: #d8e4e6;        /* 湯けむり */
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        font-family: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", sans-serif;
+        color: var(--sumi);
+        background: var(--washi);
+    }
+
+    /* 全体 */
+    .page {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        grid-template-columns: 320px 1fr;
+        grid-template-areas:
+            "header header"
+            "sidebar map";
+        height: 100%;
+    }
+
+    /* ヘッダー */
+    header {
+        grid-area: header;
+        background: var(--ai-deep);
+        color: var(--washi);
+        padding: 14px 22px;
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        border-bottom: 3px solid var(--shu);
+    }
+    header h1 {
+        font-family: "Shippori Mincho B1", serif;
+        font-weight: 800;
+        font-size: 22px;
+        margin: 0;
+        letter-spacing: 0.14em;
+    }
+    header h1 .mark {
+        color: var(--shu);
+        margin-right: 6px; 
+    }
+    header p {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: var(--yu);
+    }
+
+    /* サイドバー */
+    aside {
+        grid-area: sidebar;
+        background: var(--washi);
+        border-right: 1px solid #d9d3c2;
+        overflow-y: auto;
+        padding: 12px 10px 24px;
+    }
+
+    /* ▼ jQuery UI アコーディオンを和風テーマに合わせる (プラスα) */
+    #spot-list.ui-accordion .ui-accordion-header {
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.25em;
+        color: var(--ai);
+        background: transparent;
+        border: 0;
+        border-left: 3px solid var(--shu);
+        border-radius: 0;
+        padding: 8px 10px 8px 26px;
+        margin-top: 8px;
+    }
+    #spot-list.ui-accordion .ui-accordion-header.ui-state-active {
+        background: #ece7d8;
+        color: var(--ai-deep);
+    }
+    #spot-list.ui-accordion .ui-accordion-header .ui-icon {
+        left: 8px;
+    }
+    #spot-list.ui-accordion .ui-accordion-content {
+        background: transparent;
+        border: 0;
+        padding: 4px 0 8px;
+    }
+    /* ▲ */
+
+    .spot-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        border: 0;
+        background: transparent;
+        font-family: inherit;
+        font-size: 14px;
+        color: var(--sumi);
+        padding: 6px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+        text-align: left;
+        transition: background 0.15s;
+    }
+    .spot-btn:hover {
+        background: #ece7d8;
+    }
+    .spot-btn:focus-visible {
+        outline: 2px solid var(--shu);
+        outline-offset: 1px;
+    }
+    .spot-btn.active {
+        background: var(--ai);
+        color: #fff;
+    }
+    .spot-btn.active .pref {
+        color: var(--yu);
+    }
+
+    /* ▼ サムネイル画像 (プラスα) */
+    .spot-btn .thumb {
+        width: 52px;
+        height: 40px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid #d9d3c2;
+        flex-shrink: 0;
+        background: var(--yu);
+    }
+    .spot-btn .thumb-fallback {
+        width: 52px;
+        height: 40px;
+        display: none;             /* 画像読込失敗時にJSで表示 */
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        border: 1px solid #d9d3c2;
+        background: var(--yu);
+        color: var(--ai);
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+    /* ▲ */
+
+    .spot-btn .text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+    .spot-btn .name {
+        font-weight: 500;
+    }
+    .spot-btn .pref {
+        font-size: 11px;
+        color: #8b8574;
+        letter-spacing: 0.05em;
+    }
+
+    /* ▼ jQuery UI ツールチップの装飾 (プラスα) */
+    .onsen-tooltip.ui-tooltip {
+        font-family: "Zen Kaku Gothic New", sans-serif;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        color: var(--washi);
+        background: var(--ai-deep);
+        border: 1px solid var(--shu);
+        border-radius: 8px;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        padding: 6px 12px;
+    }
+    /* ▲ */
+
+    /* ▼ トップページ (画像スライドショー、クリックで上へスライドして地図画面へ) */
+    #top-page {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: var(--ai-deep);
+        overflow: hidden;
+        cursor: pointer;
+        transition: transform 0.8s cubic-bezier(0.65, 0, 0.35, 1);
+    }
+    #top-page.closed {
+        transform: translateY(-100%);   /* クリック後、上へスライド */
+    }
+    #slideshow img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: translateX(100%);    /* 右で待機 */
+        transition: transform 1.1s cubic-bezier(0.65, 0, 0.35, 1);
+    }
+    #slideshow img.no-anim { transition: none; }
+    #slideshow img.show { transform: translateX(0); }      /* 画面内 */
+    #slideshow img.past { transform: translateX(-100%); }  /* 左へ退場 */
+
+    .top-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: linear-gradient(rgba(20,42,70,0.55), rgba(20,42,70,0.30) 45%, rgba(20,42,70,0.60));
+        color: var(--washi);
+        text-align: center;
+        padding: 20px;
+    }
+    .top-overlay .top-sub {
+        margin: 0;
+        font-size: 13px;
+        letter-spacing: 0.3em;
+        color: var(--yu);
+    }
+    .top-overlay .top-title {
+        font-family: "Shippori Mincho B1", serif;
+        font-weight: 800;
+        font-size: clamp(26px, 5vw, 46px);
+        letter-spacing: 0.18em;
+        margin: 0;
+        text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .top-overlay .top-title .mark { color: var(--shu); margin-right: 8px; }
+    #top-caption {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0.2em;
+        min-height: 1.5em;
+    }
+    .top-overlay .top-hint {
+        position: absolute;
+        bottom: 36px;
+        left: 0;
+        right: 0;
+        margin: 0;
+        font-size: 13px;
+        letter-spacing: 0.25em;
+        animation: hint-blink 2.2s ease-in-out infinite;
+    }
+    @keyframes hint-blink {
+        0%, 100% { opacity: 0.35; }
+        50% { opacity: 1; }
+    }
+    /* ▲ */
+
+    /* マップ */
+    #map {
+        grid-area: map;
+        height: 100%;
+        width: 100%;
+    }
+    /* 情報ウィンドウ */
+    #info-content {
+        max-width: 340px;
+        font-family: "Zen Kaku Gothic New", sans-serif;
+    }
+    #info-content h1 {
+        font-family: "Shippori Mincho B1", serif;
+        font-size: 21px;
+        margin: 0 0 6px;
+        color: var(--ai-deep);
+        letter-spacing: 0.1em;
+    }
+    #info-content .quality {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--shu);
+        border: 1px solid var(--shu);
+        border-radius: 999px;
+        padding: 2px 10px;
+        margin-bottom: 6px;
+        letter-spacing: 0.05em;
+    }
+    #map-image {
+        display: block;
+        width: 100%;
+        max-width: 340px;
+        height: auto;
+        border-radius: 8px;
+    }
+    #info-content p {
+        margin: 8px 0 0;
+        font-size: 14px;
+        line-height: 1.8;
+    }
+
+    /* 閉じるボタンの余白を詰める */
+    .gm-style-iw-chr {
+        height: 10px !important;
+        min-height: 0 !important;
+    }
+    .gm-style-iw-chr .gm-ui-hover-effect {
+        top: 2px !important;
+        right: 2px !important;
+    }
+    .gm-style-iw-c {
+        padding-top: 14px !important;
+        border-radius: 10px !important;
+    }
+
+    /* スマホ */
+    @media (max-width: 760px) {
+        #info-content, #map-image { max-width: 250px; }
+        #info-content h1 { font-size: 18px; }
+        #info-content p { font-size: 13px; }
+
+        .page {
+            grid-template-columns: 1fr;
+            grid-template-rows: auto auto 1fr;
+            grid-template-areas:
+                "header"
+                "sidebar"
+                "map";
+        }
+        aside {
+            border-right: 0;
+            border-bottom: 1px solid #d9d3c2;
+            max-height: 38vh;          /* アコーディオンを縦のまま高さ制限 */
+            overflow-y: auto;
+            padding: 8px 10px;
+        }
+        .spot-btn .thumb,
+        .spot-btn .thumb-fallback { width: 44px; height: 34px; }
+        header h1 { font-size: 18px; }
+        header p { display: none; }
+    }
+</style>
+</head>
+<body>
+<!-- ▼ トップページ (クリックで上にスライドして地図画面へ) -->
+<div id="top-page" role="button" tabindex="0" aria-label="クリックして地図へすすむ">
+    <div id="slideshow"></div>
+    <div class="top-overlay">
+        <p class="top-sub">日本各地の名湯をたずねる</p>
+        <h2 class="top-title"><span class="mark">♨</span>全国温泉めぐりマップ</h2>
+        <p id="top-caption"></p>
+        <p class="top-hint">▼ 画面をクリックして地図へ ▼</p>
+    </div>
+</div>
+<!-- ▲ -->
+
+<div class="page">
+    <header>
+        <h1><span class="mark">♨</span>全国温泉めぐりマップ</h1>
+        <p>ピンまたは一覧から、日本各地の名湯をたずねる</p>
+    </header>
+
+    <aside>
+        <div id="spot-list" aria-label="温泉一覧"></div>
+    </aside>
+
+    <div id="map"></div>
+</div>
+
+<script>
+    // 温泉データ
+    const spots = [
+        {
+            region: "北海道・東北",
+            pref: "北海道",
+            title: "登別温泉",
+            position: { lat: 42.4930, lng: 141.1465 },
+            image: "img/noboribetsu.jpg",
+            quality: "硫黄泉 ほか多彩",
+            description: "「地獄谷」から湧く9種類もの泉質を誇り、\u201c温泉のデパート\u201dと呼ばれる北海道随一の温泉地。<br><a href='https://www.noboribetsu-spa.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "北海道・東北",
+            pref: "山形県",
+            title: "銀山温泉",
+            position: { lat: 38.5703, lng: 140.5290 },
+            image: "img/ginzan.jpg",
+            quality: "含食塩硫化水素泉",
+            description: "大正ロマンの木造旅館がガス灯に照らされる、ノスタルジックな山あいの温泉街。<br><a href='https://www.ginzanonsen.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "関東",
+            pref: "群馬県",
+            title: "草津温泉",
+            position: { lat: 36.6232211993558, lng: 138.59671257266282 },
+            image: "img/kusatsu.jpg",
+            quality: "酸性泉",
+            description: "自然湧出量日本一。湯畑と湯もみで知られ、強い酸性の湯は\u201c恋の病以外効かぬ病はない\u201dと謳われる名湯。<br><a href='https://www.kusatsu-onsen.ne.jp/portal/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "関東",
+            pref: "神奈川県",
+            title: "箱根温泉",
+            position: { lat: 35.2324, lng: 139.1069 },
+            image: "img/hakone.jpg",
+            quality: "単純温泉 ほか",
+            description: "首都圏からのアクセス抜群の一大温泉郷。芦ノ湖や美術館めぐりとあわせて楽しめる。<br><a href='https://www.hakone-ryokan.or.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "中部",
+            pref: "静岡県",
+            title: "熱海温泉",
+            position: { lat: 35.0980, lng: 139.0770 },
+            image: "img/atami.jpg",
+            quality: "塩化物泉",
+            description: "相模湾を望む海辺の温泉リゾート。徳川家康も湯治に訪れたと伝わる歴史ある湯。<br><a href='https://www.city.atami.lg.jp/kanko/onsen/1001823.html' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "中部",
+            pref: "石川県",
+            title: "和倉温泉",
+            position: { lat: 37.0965, lng: 136.9199 },
+            image: "img/wakura.jpg",
+            quality: "塩化物泉",
+            description: "七尾湾に面した開湯1200年の\u201c海の温泉\u201d。塩分を含む湯は保温効果が高い。<br><a href='https://www.wakura.or.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "中部",
+            pref: "岐阜県",
+            title: "下呂温泉",
+            position: { lat: 35.80676701883712, lng: 137.23943737776486 },
+            image: "img/gero.jpg",
+            quality: "アルカリ性単純温泉",
+            description: "有馬・草津と並ぶ日本三名泉のひとつ。とろりとなめらかな湯ざわりで\u201c美人の湯\u201dと名高い。<br><a href='https://www.gero-spa.or.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "関西",
+            pref: "兵庫県",
+            title: "有馬温泉",
+            position: { lat: 34.797917843541526, lng: 135.24767084190805 },
+            image: "img/arima.jpg",
+            quality: "含鉄塩化物泉 ほか",
+            description: "日本最古級の名湯。鉄分で赤茶色に染まる「金泉」と、炭酸を含む透明な「銀泉」の2つの湯が楽しめる。<br><a href='https://www.arima-onsen.com/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "関西",
+            pref: "兵庫県",
+            title: "城崎温泉",
+            position: { lat: 35.6249, lng: 134.8137 },
+            image: "img/kinosaki.jpg",
+            quality: "塩化物泉",
+            description: "柳並木の川沿いを浴衣と下駄で歩く「外湯めぐり」が名物。7つの外湯をはしごできる。<br><a href='https://kinosaki-spa.gr.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "中国・四国",
+            pref: "愛媛県",
+            title: "道後温泉",
+            position: { lat: 33.8517, lng: 132.7862 },
+            image: "img/dogo.jpg",
+            quality: "アルカリ性単純温泉",
+            description: "3000年の歴史を持つとされる日本最古級の湯。重要文化財の道後温泉本館は街のシンボル。<br><a href='https://dogo.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "九州",
+            pref: "大分県",
+            title: "別府温泉",
+            position: { lat: 33.28021985930724, lng: 131.4938151704449 },
+            image: "img/beppu.jpg",
+            quality: "多彩(単純温泉ほか)",
+            description: "源泉数・湧出量ともに日本一の温泉都市。色とりどりの「地獄めぐり」でも有名。<br><a href='https://beppu-tourism.com/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "九州",
+            pref: "大分県",
+            title: "由布院温泉",
+            position: { lat: 33.2646, lng: 131.3596 },
+            image: "img/yufuin.jpg",
+            quality: "単純温泉",
+            description: "由布岳のふもとに広がる人気温泉地。朝霧に包まれる金鱗湖と、雑貨や食べ歩きの街歩きが楽しい。<br><a href='https://www.yufuin-onsen.jp/' target='_blank'>詳細はこちら</a>"
+        },
+        {
+            region: "九州",
+            pref: "鹿児島県",
+            title: "指宿温泉",
+            position: { lat: 31.2432, lng: 130.6510 },
+            image: "img/ibusuki.jpg",
+            quality: "塩化物泉",
+            description: "世界的にも珍しい天然の「砂むし温泉」。温かい砂に埋まってじんわり汗をかく名物体験。<br><a href='https://www.ibusuki.or.jp/spa/' target='_blank'>詳細はこちら</a>"
+        }
+    ];
+
+    const markers = [];
+    let infoWindow = null;
+    let map = null;
+
+    function buildContent(spot) {
+        return (
+            "<div id='info-content'>" +
+            "<h1>" + spot.title + "</h1>" +
+            "<span class='quality'>泉質:" + spot.quality + "</span>" +
+            "<img id='map-image' src='" + spot.image + "' alt='" + spot.title + "' onerror=\"this.style.display='none'\">" +
+            "<p>" + spot.description + "</p></div>"
+        );
+    }
+
+    // ピン、ボタンをクリックしたときに情報ウィンドウを開く
+    function selectSpot(index) {
+        const spot = spots[index];
+        map.panTo(spot.position);
+        if (map.getZoom() < 10) map.setZoom(11);
+        infoWindow.setContent(buildContent(spot));
+        infoWindow.open(map, markers[index]);
+        setActiveButton(index);
+        openAccordionFor(index);
+    }
+
+    function setActiveButton(index) {
+        $(".spot-btn").each(function () {
+            $(this).toggleClass("active", $(this).data("index") === index);
+        });
+    }
+
+    // ピンから選択したときに、その温泉が入っているアコーディオンのパネルを開く (プラスα)
+    function openAccordionFor(index) {
+        const regions = [...new Set(spots.map(s => s.region))];
+        const regionIndex = regions.indexOf(spots[index].region);
+        if ($("#spot-list").accordion("option", "active") !== regionIndex) {
+            $("#spot-list").accordion("option", "active", regionIndex);
+        }
+    }
+
+    // サイドバーの温泉一覧を生成 (jQuery UI アコーディオン + サムネイル)
+    function buildList() {
+        const $list = $("#spot-list");
+        const regions = [...new Set(spots.map(s => s.region))];
+
+        regions.forEach(region => {
+            // アコーディオンの見出し
+            $("<h3>").text(region).appendTo($list);
+
+            // アコーディオンの中身
+            const $panel = $("<div>").appendTo($list);
+
+            spots.forEach((spot, i) => {
+                if (spot.region !== region) return;
+
+                const $btn = $("<button>")
+                    .addClass("spot-btn")
+                    .attr("data-index", i)
+                    .attr("title", "泉質:" + spot.quality)   // ツールチップ用
+                    .on("click", () => selectSpot(i));
+
+                // ▼ サムネイル画像 (読込失敗時は♨マークに切替)
+                const $thumb = $("<img>")
+                    .addClass("thumb")
+                    .attr({ src: spot.image, alt: spot.title, loading: "lazy" });
+                const $fallback = $("<span>")
+                    .addClass("thumb-fallback")
+                    .text("♨");
+                $thumb.on("error", function () {
+                    $(this).hide();
+                    $fallback.css("display", "flex");
+                });
+                // ▲
+
+                const $text = $("<span>").addClass("text").append(
+                    $("<span>").addClass("name").text(spot.title),
+                    $("<span>").addClass("pref").text(spot.pref)
+                );
+
+                $btn.append($thumb, $fallback, $text).appendTo($panel);
+            });
+        });
+
+        // ▼ jQuery UI:アコーディオン化
+        $list.accordion({
+            collapsible: true,
+            active: 0,
+            heightStyle: "content",
+            animate: 180,
+            icons: { header: "ui-icon-triangle-1-e", activeHeader: "ui-icon-triangle-1-s" }
+        });
+        // ▲
+
+        // ▼ jQuery UI:ツールチップ (泉質を表示)
+        $(".spot-btn").tooltip({
+            classes: { "ui-tooltip": "onsen-tooltip" },
+            position: { my: "left+8 center", at: "right center" },
+            show: { duration: 120 },
+            hide: { duration: 80 }
+        });
+        // ▲
+    }
+
+    // ▼ トップページ:スライドショーと、クリックで閉じる処理
+    let slideIndex = 0;
+    let slideTimer = null;
+
+    function showSlide(nextIndex) {
+        const $imgs = $("#slideshow img");
+        if ($imgs.length === 0) return;
+
+        const $prev = $imgs.filter(".show");
+        const $next = $imgs.eq(nextIndex % $imgs.length);
+        if ($prev.length && $prev[0] === $next[0]) return;
+
+        // 次の画像をアニメーションなしで右側に待機させてから、左へ流す
+        $next.addClass("no-anim").removeClass("show past");
+        $next[0].offsetWidth;   // 強制リフロー(待機位置を確定させる)
+        $next.removeClass("no-anim");
+
+        $prev.removeClass("show").addClass("past");
+        $next.addClass("show");
+        $("#top-caption").text("— " + $next.attr("alt") + " —");
+    }
+
+    function buildTopPage() {
+        const $slide = $("#slideshow");
+
+        // 温泉画像をスライドとして追加 (読み込めない画像は除外)
+        spots.forEach(spot => {
+            const $img = $("<img>").attr({ src: spot.image, alt: spot.title });
+            $img.on("error", function () { $(this).remove(); });
+            $slide.append($img);
+        });
+
+        // 最初の1枚を表示してから、一定間隔で流す
+        showSlide(0);
+        slideIndex = 1;
+        slideTimer = setInterval(() => {
+            showSlide(slideIndex);
+            slideIndex++;
+        }, 4000);
+
+        // クリック(またはEnter)で上にスライドして地図画面へ
+        function closeTopPage() {
+            clearInterval(slideTimer);
+            $("#top-page").addClass("closed");
+            setTimeout(() => $("#top-page").hide(), 900);   // スライドが終わってから非表示
+        }
+        $("#top-page").on("click", closeTopPage);
+        $("#top-page").on("keydown", e => {
+            if (e.key === "Enter" || e.key === " ") closeTopPage();
+        });
+    }
+    // ▲
+
+    // マップのスタイル
+    const mapStyle = [
+        { elementType: "geometry", stylers: [{ color: "#eef0e9" }] },
+        { featureType: "water", elementType: "geometry", stylers: [{ color: "#c4d7dd" }] },
+        { featureType: "poi", stylers: [{ visibility: "off" }] },
+        { featureType: "transit", stylers: [{ visibility: "off" }] },
+        { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+        { featureType: "road", elementType: "labels", stylers: [{ visibility: "off" }] },
+        { featureType: "administrative", elementType: "labels.text.fill", stylers: [{ color: "#6b6f66" }] }
+    ];
+
+    function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+            zoom: 6,
+            center: { lat: 37.0, lng: 136.5 },
+            zoomControl: true,
+            mapTypeControl: true,
+            streetViewControl: false,
+            styles: mapStyle
+        });
+
+        infoWindow = new google.maps.InfoWindow({ maxWidth: 380 });
+
+        spots.forEach((spot, i) => {
+            const marker = new google.maps.Marker({
+                position: spot.position,
+                map: map,
+                title: spot.title
+            });
+            marker.addListener("click", () => selectSpot(i));
+            markers.push(marker);
+        });
+
+        // マップクリックで情報ウィンドウを閉じる
+        map.addListener("click", () => {
+            infoWindow.close();
+            setActiveButton(-1);
+        });
+    }
+
+    $(function () {
+        buildList();
+        buildTopPage();
+    });
+    window.initMap = initMap;
+    window.addEventListener("load", () => {
+        initMap();
+    });
+</script>
+</body>
+</html>
