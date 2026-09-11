@@ -1,1 +1,2 @@
+cd C:\Users\hara\Desktop\2026\JS22\GitHub\IH12B-26-HaraTakumi
 git push origin main
